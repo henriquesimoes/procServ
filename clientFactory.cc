@@ -237,7 +237,7 @@ void clientItem::processInput(const char *buf, int len)
                 const char *msg = NL "@@@ Got a kill command" NL;
                 PRINTF ("Got a kill command\n");
                 SendToAll(msg, strlen(msg), NULL);
-                processFactorySendSignal(killSig);
+                processClass::terminateWithSignal(killSig);
             }
         }
         SendToAll(buf, len, this);

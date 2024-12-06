@@ -4,11 +4,14 @@
 // Freddie Akeroyd 2016
 // GNU Public License (GPLv3) applies - see www.gnu.org
 
+#include <csignal>
+#include <cstdlib>
 #include <unistd.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/types.h>
 #include <sys/socket.h>
+#include <sys/wait.h>
 #include <netinet/in.h>
 #include <errno.h>
 #include <arpa/inet.h>
@@ -283,13 +286,71 @@ void processFactorySendSignal(int signal)
         PRINTF("Sending signal %d to pid %ld\n",
                signal, (long) processClass::_runningItem->_pid);
         kill(-processClass::_runningItem->_pid, signal);
-        if (signal == killSig) processClass::_runningItem->terminateJob();
     }
 }
 
 void processClass::restartOnce ()
 {
     _restartTime = 0;
+}
+
+pid_t processClass::waitChildrenExitWithTimeout(const struct timespec &timeout)
+{
+    struct timespec ts = timeout;
+
+    sigset_t mask;
+    sigfillset(&mask);
+    sigdelset(&mask, SIGCHLD);
+
+    /*
+     * Assign a no-op handler to ensure pselect will not restart due to
+     * a missing handler
+     */
+    struct sigaction action = {0};
+    action.sa_handler = [](int) {};
+    sigaction(SIGCHLD, &action, NULL);
+
+    while (pselect(0, NULL, NULL, NULL, &ts, &mask) == -1) {
+        int wstatus;
+
+        if (errno == EINTR) {
+            auto wpid = waitpid(-_pid, &wstatus, WNOHANG);
+
+            if (wpid == -1) {
+                perror("wait children: waitpid:");
+                return -1;
+            }
+
+            if (WIFEXITED(wstatus) || WIFSIGNALED(wstatus))
+                return wpid;
+        } else {
+            perror("wait children: pselect:");
+            return -1;
+        }
+
+        ts = timeout;
+    }
+
+    action.sa_handler = SIG_DFL;
+    sigaction(SIGCHLD, &action, NULL);
+
+    /* Timeout */
+    return 0;
+}
+
+void processClass::terminateWithSignal(int signal)
+{
+    processFactorySendSignal(signal);
+
+    auto status = _runningItem->waitChildrenExitWithTimeout({.tv_sec = 5});
+
+    if (status > 0) {
+        _runningItem->_markedForDeletion = true;
+        _runningItem->_pid = 0;
+        _runningItem->_fd = 0;
+    }
+
+    _runningItem->terminateJob();
 }
 
 void processClass::terminateJob()

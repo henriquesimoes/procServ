@@ -28,12 +28,14 @@ public:
     virtual bool isLogger() const { return false; }
     static void restartOnce ();
     static bool exists() { return _runningItem ? true : false; }
+    static void terminateWithSignal(int signal);
     virtual ~processClass();
 protected:
     pid_t _pid;
     static processClass * _runningItem;
     static time_t _restartTime;
     void terminateJob();
+    pid_t waitChildrenExitWithTimeout(const struct timespec &timeout);
 #ifdef __CYGWIN__
     HANDLE _hwinjob;
 #endif /* __CYGWIN__ */
