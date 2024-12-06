@@ -340,6 +340,13 @@ pid_t processClass::waitChildrenExitWithTimeout(const struct timespec &timeout)
 
 void processClass::terminateWithSignal(int signal)
 {
+    sigset_t previous;
+    sigset_t block;
+
+    sigprocmask(0, NULL, &block);
+    sigaddset(&block, SIGCHLD);
+    sigprocmask(SIG_SETMASK, &block, &previous);
+
     processFactorySendSignal(signal);
 
     auto status = _runningItem->waitChildrenExitWithTimeout({.tv_sec = 5});
@@ -351,6 +358,8 @@ void processClass::terminateWithSignal(int signal)
     }
 
     _runningItem->terminateJob();
+
+    sigprocmask(SIG_SETMASK, &previous, NULL);
 }
 
 void processClass::terminateJob()
